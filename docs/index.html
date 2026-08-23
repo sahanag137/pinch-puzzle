@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pinch Puzzle — Webcam Hand-Tracking Game</title>
+<meta name="description" content="Frame a photo with two hands, pinch to snap it, then drag-swap the tiles with your fingertips to solve the puzzle." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --void:#0a0d0f;
+    --panel:#12171a;
+    --panel-2:#181f22;
+    --line:#242e32;
+    --line-bright:#334046;
+    --cyan:#5eead4;
+    --cyan-dim:#2f6e64;
+    --magenta:#fb7185;
+    --amber:#f5b95a;
+    --text:#e7edef;
+    --text-dim:#7f9096;
+    --radius:2px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--void);color:var(--text);}
+  body{
+    font-family:'Space Grotesk', sans-serif;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:28px 16px 60px;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size:34px 34px;
+    background-position:center;
+    background-color:var(--void);
+  }
+  .mono{font-family:'IBM Plex Mono', monospace;}
+  .eyebrow{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    letter-spacing:.18em;
+    text-transform:uppercase;
+    color:var(--cyan);
+  }
+  h1{
+    font-size:clamp(28px,4vw,42px);
+    font-weight:700;
+    letter-spacing:-.01em;
+    margin:6px 0 4px;
+  }
+  .sub{
+    color:var(--text-dim);
+    font-size:14.5px;
+    max-width:560px;
+    line-height:1.5;
+    margin:0 0 26px;
+  }
+  header{text-align:center;max-width:680px;}
+
+  /* ---------- viewfinder / stage ---------- */
+  #stageWrap{
+    position:relative;
+    width:min(760px, 94vw);
+    aspect-ratio:4/3;
+    background:#000;
+    border-radius:var(--radius);
+  }
+  #stageWrap::before,#stageWrap::after,
+  .cornerA,.cornerB{
+    content:'';
+    position:absolute;
+    width:26px;height:26px;
+    border-color:var(--cyan);
+    border-style:solid;
+    border-width:0;
+    z-index:5;
+    pointer-events:none;
+    filter:drop-shadow(0 0 6px rgba(94,234,212,.5));
+  }
+  #stageWrap::before{top:-1px;left:-1px;border-top-width:2px;border-left-width:2px;}
+  #stageWrap::after{top:-1px;right:-1px;border-top-width:2px;border-right-width:2px;}
+  .cornerA{bottom:-1px;left:-1px;border-bottom-width:2px;border-left-width:2px;}
+  .cornerB{bottom:-1px;right:-1px;border-bottom-width:2px;border-right-width:2px;}
+
+  #stage{
+    width:100%;
+    height:100%;
+    display:block;
+    border-radius:var(--radius);
+    background:#000;
+  }
+  .scanline{
+    position:absolute;
+    left:0;right:0;height:2px;
+    background:linear-gradient(90deg, transparent, var(--cyan), transparent);
+    opacity:.55;
+    animation:scan 3.2s linear infinite;
+    pointer-events:none;
+    z-index:4;
+  }
+  @keyframes scan{
+    0%{top:2%;} 50%{top:97%;} 100%{top:2%;}
+  }
+  #permOverlay{
+    position:absolute;inset:0;
+    display:flex;align-items:center;justify-content:center;
+    flex-direction:column;gap:14px;
+    background:rgba(10,13,15,.92);
+    text-align:center;padding:24px;
+    z-index:6;
+    border-radius:var(--radius);
+  }
+  #permOverlay p{color:var(--text-dim);font-size:13.5px;max-width:380px;margin:0;}
+  button{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12.5px;
+    letter-spacing:.05em;
+    text-transform:uppercase;
+    background:var(--panel-2);
+    color:var(--text);
+    border:1px solid var(--line-bright);
+    padding:10px 18px;
+    border-radius:var(--radius);
+    cursor:pointer;
+    transition:border-color .15s, color .15s, background .15s;
+  }
+  button:hover{border-color:var(--cyan);color:var(--cyan);}
+  button.primary{background:var(--cyan);color:#04211d;border-color:var(--cyan);font-weight:600;}
+  button.primary:hover{background:#7ff2e0;color:#04211d;}
+  button.danger{border-color:var(--magenta);color:var(--magenta);}
+  button.danger:hover{background:var(--magenta);color:#2a0508;}
+  button:focus-visible{outline:2px solid var(--cyan);outline-offset:2px;}
+
+  /* ---------- HUD readout strip ---------- */
+  #hud{
+    width:min(760px, 94vw);
+    display:flex;
+    justify-content:space-between;
+    gap:10px;
+    margin-top:10px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11.5px;
+    color:var(--text-dim);
+    flex-wrap:wrap;
+  }
+  #hud span{white-space:nowrap;}
+  #hud b{color:var(--cyan);font-weight:600;}
+  #hud .warn b{color:var(--magenta);}
+
+  /* ---------- control panel ---------- */
+  #panel{
+    width:min(760px, 94vw);
+    margin-top:18px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:20px 22px;
+  }
+  .panelTitle{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--text-dim);
+    margin:0 0 14px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  .row + .row{margin-top:12px;}
+  .field-label{font-size:12px;color:var(--text-dim);min-width:86px;}
+  input[type=range]{accent-color:var(--cyan);}
+  input[type=text]{
+    font-family:'IBM Plex Mono', monospace;
+    background:var(--panel-2);
+    border:1px solid var(--line-bright);
+    color:var(--text);
+    padding:10px 12px;
+    border-radius:var(--radius);
+    font-size:14px;
+    flex:1;
+    min-width:180px;
+  }
+  input[type=text]:focus-visible{outline:2px solid var(--cyan);outline-offset:1px;}
+
+  .grid-btn{padding:8px 14px;}
+  .grid-btn.active{border-color:var(--cyan);color:var(--cyan);background:rgba(94,234,212,.08);}
+
+  table{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono', monospace;font-size:13px;}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);}
+  th{color:var(--text-dim);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.08em;}
+  tr.top td{color:var(--cyan);}
+
+  .bigStat{font-family:'IBM Plex Mono', monospace;font-size:15px;color:var(--cyan);}
+  .hidden{display:none !important;}
+
+  footer{
+    margin-top:34px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color:var(--text-dim);
+    text-align:center;
+    max-width:600px;
+    line-height:1.7;
+  }
+  footer a{color:var(--cyan);}
+
+  @media (prefers-reduced-motion: reduce){
+    .scanline{animation:none;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">Hand-tracking · Client-side · No install</div>
+  <h1>Pinch Puzzle</h1>
+  <p class="sub">Frame a photo with two hands and pinch to capture it. Then pinch a tile and drag it onto any other tile to swap — no empty slot needed. Hold a fist to reshuffle.</p>
+</header>
+
+<div id="stageWrap">
+  <span class="cornerA"></span><span class="cornerB"></span>
+  <div class="scanline" id="scanline"></div>
+  <canvas id="stage" width="1280" height="960"></canvas>
+  <div id="permOverlay">
+    <div class="eyebrow">Camera access required</div>
+    <p>This runs entirely in your browser — no video is uploaded anywhere. Grant camera access to start.</p>
+    <button class="primary" id="startBtn">Enable Camera</button>
+    <p id="permError" class="mono" style="color:var(--magenta);font-size:12px;"></p>
+  </div>
+</div>
+
+<div id="hud">
+  <span>HANDS <b id="hudHands">0</b></span>
+  <span>PINCH <b id="hudPinch">0.00</b></span>
+  <span>STATE <b id="hudState">IDLE</b></span>
+  <span>FPS <b id="hudFps">--</b></span>
+</div>
+
+<!-- LIVE / capture panel -->
+<div id="panelLive" class="hidden">
+  <div id="panel">
+    <p class="panelTitle">Phase 1 — Capture <span>1/2/3 = grid · space = manual snap</span></p>
+    <div class="row">
+      <span class="field-label">Grid size</span>
+      <button class="grid-btn" data-grid="3">3 × 3</button>
+      <button class="grid-btn" data-grid="4">4 × 4</button>
+      <button class="grid-btn" data-grid="5">5 × 5</button>
+    </div>
+    <div class="row">
+      <span class="field-label">Sensitivity</span>
+      <input type="range" id="sensSlider" min="0.20" max="0.90" step="0.01" value="0.55" />
+      <span class="mono" id="sensVal" style="font-size:12px;color:var(--text-dim);">0.55</span>
+    </div>
+    <div class="row" style="margin-top:16px;">
+      <button class="primary" id="manualCaptureBtn">Snap Now</button>
+    </div>
+  </div>
+</div>
+
+<!-- PUZZLE panel -->
+<div id="panelPuzzle" class="hidden">
+  <div id="panel">
+    <p class="panelTitle">Phase 2 — Solve <span class="bigStat" id="timerText">0:00</span></p>
+    <p class="sub" style="margin:0 0 14px;">Pinch a tile, drag it over any other tile, release to swap. On mouse/touch: tap one tile then another.</p>
+    <div class="row">
+      <button id="reshuffleBtn">Reshuffle</button>
+      <button id="backToCameraBtn">New Photo</button>
+      <button id="debugToggleBtn">Debug HUD</button>
+    </div>
+  </div>
+</div>
+
+<!-- SOLVED panel -->
+<div id="panelSolved" class="hidden">
+  <div id="panel">
+    <p class="panelTitle">Solved <span class="bigStat" id="solvedTime">0:00</span></p>
+    <div class="row">
+      <input type="text" id="nameInput" maxlength="14" placeholder="Your name" />
+      <button class="primary" id="saveScoreBtn">Save Score</button>
+    </div>
+    <div class="row">
+      <button id="solvedReshuffleBtn">Play Again</button>
+      <button id="solvedBackBtn">New Photo</button>
+    </div>
+  </div>
+</div>
+
+<!-- LEADERBOARD panel -->
+<div id="panelLeaderboard" class="hidden">
+  <div id="panel">
+    <p class="panelTitle">Leaderboard <span class="mono" id="lbScopeLabel" style="font-size:11px;">stored in this browser only</span></p>
+    <table>
+      <thead><tr><th>#</th><th>Name</th><th>Time</th><th>Grid</th></tr></thead>
+      <tbody id="leaderboardBody"></tbody>
+    </table>
+    <div class="row" style="margin-top:16px;">
+      <button class="primary" id="lbBackBtn">Back to Camera</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Runs fully client-side with MediaPipe Hand Landmarker — nothing leaves your device.<br/>
+  Keyboard fallback: <span class="mono">1/2/3</span> grid · <span class="mono">space</span> capture ·
+  <span class="mono">r</span> reshuffle · <span class="mono">c</span> new photo · <span class="mono">d</span> debug
+</footer>
+
+<script type="module">
+import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+/* ============================== CONFIG ============================== */
+const PINCH_HOLD_SECONDS   = 0.4;
+const CAPTURE_COOLDOWN     = 2.0;
+const FIST_HOLD_SECONDS    = 0.8;
+const MAX_HAND_LOST_SECONDS = 2.0; // safety net: force-drop only if hand tracking is lost this long mid-drag
+const DEFAULT_GRID         = 3;
+const LB_KEY                = "pinchPuzzleLeaderboard";
+const LB_MAX                = 10;
+
+// ---- Global leaderboard (optional) --------------------------------------
+// Fill this in with your Firebase project ID (Firebase Console -> Project
+// settings -> General -> Project ID) to make the leaderboard shared across
+// everyone who plays, instead of local to each browser. See docs/firestore.rules
+// for the security rules to paste into Firestore. Leave as-is to keep using
+// the local-only (per-browser) leaderboard -- the game works fine either way.
+const FIREBASE_PROJECT_ID   = "pinch-puzzle-768c7";
+const LB_GLOBAL_ENABLED     = FIREBASE_PROJECT_ID !== "YOUR_PROJECT_ID";
+const LB_COLLECTION_URL     = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/leaderboard`;
+
+/* ============================== STATE ============================== */
+const S = {
+  mode: "LIVE",            // LIVE | PUZZLE | SOLVED | NAME_ENTRY | LEADERBOARD
+  grid: DEFAULT_GRID,
+  pinchThreshold: 0.55,
+  debug: false,
+
+  twoHandPinchStart: null,
+  lastCaptureTime: -999,
+
+  heldPos: null,
+  wasPinching: false,
+  pinchStartTime: null,
+  lastHandSeenTime: null,   // for the hand-lost safety net, not hold duration
+  fistStartTime: null,
+  lastCursor: null,          // {x,y} in canvas px
+
+  solveStart: null,
+  solveEnd: null,
+
+  feedback: "", feedbackUntil: 0, feedbackColor: "#5eeaD4",
+
+  mouseHeld: null,
+
+  puzzle: null,             // {grid, board:[], src: canvas}
+  tilePx: 0,
+  offset: {x:0,y:0},
+};
+
+/* ============================== DOM ============================== */
+const canvas = document.getElementById("stage");
+const ctx = canvas.getContext("2d");
+const video = document.createElement("video");
+video.autoplay = true; video.playsInline = true; video.muted = true;
+
+const startBtn = document.getElementById("startBtn");
+const permOverlay = document.getElementById("permOverlay");
+const permError = document.getElementById("permError");
+const scanline = document.getElementById("scanline");
+
+const hudHands = document.getElementById("hudHands");
+const hudPinch = document.getElementById("hudPinch");
+const hudState = document.getElementById("hudState");
+const hudFps = document.getElementById("hudFps");
+
+const panelLive = document.getElementById("panelLive");
+const panelPuzzle = document.getElementById("panelPuzzle");
+const panelSolved = document.getElementById("panelSolved");
+const panelLeaderboard = document.getElementById("panelLeaderboard");
+
+const sensSlider = document.getElementById("sensSlider");
+const sensVal = document.getElementById("sensVal");
+const timerText = document.getElementById("timerText");
+const solvedTime = document.getElementById("solvedTime");
+const nameInput = document.getElementById("nameInput");
+const leaderboardBody = document.getElementById("leaderboardBody");
+
+/* ============================== GESTURE HELPERS ============================== */
+function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+
+function pinchRatio(lm){
+  const d = dist(lm[4], lm[8]);
+  const handSize = dist(lm[0], lm[9]) + 1e-6;
+  return d / handSize;
+}
+function pinchPointNorm(lm){
+  return { x:(lm[4].x + lm[8].x)/2, y:(lm[4].y + lm[8].y)/2 };
+}
+function isFist(lm){
+  const wrist = lm[0];
+  const pairs = [[8,5],[12,9],[16,13],[20,17]];
+  let curled = 0;
+  for (const [tipI, mcpI] of pairs){
+    const dTip = dist(lm[tipI], wrist);
+    const dMcp = dist(lm[mcpI], wrist);
+    if (dTip < dMcp * 1.05) curled++;
+  }
+  return { isFist: curled >= 3, curled };
+}
+
+/* ============================== PUZZLE (free swap, no blank) ============================== */
+function makePuzzle(sourceCanvas, grid){
+  const board = [...Array(grid*grid).keys()];
+  const solved = [...board];
+  do { shuffleArray(board); } while (arraysEqual(board, solved));
+  return { grid, board, src: sourceCanvas };
+}
+function shuffleArray(a){
+  for (let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+}
+function arraysEqual(a,b){ return a.length===b.length && a.every((v,i)=>v===b[i]); }
+function isSolved(p){ return p.board.every((v,i)=>v===i); }
+function swapTiles(p, posA, posB){
+  if (posA==null || posB==null || posA===posB) return false;
+  const n = p.board.length;
+  if (posA<0||posA>=n||posB<0||posB>=n) return false;
+  [p.board[posA], p.board[posB]] = [p.board[posB], p.board[posA]];
+  return true;
+}
+function reshufflePuzzle(p){
+  const solved = [...Array(p.board.length).keys()];
+  do { shuffleArray(p.board); } while (arraysEqual(p.board, solved));
+}
+
+/* tileId's home rect within the square source canvas */
+function tileHomeRect(p, tileId){
+  const ts = p.src.width / p.grid;
+  const r = Math.floor(tileId / p.grid), c = tileId % p.grid;
+  return { sx: c*ts, sy: r*ts, sw: ts, sh: ts };
+}
+
+/* ============================== LEADERBOARD ============================== */
+/* Local (per-browser) storage -- always used as a fallback, and as the only
+   store if FIREBASE_PROJECT_ID hasn't been configured. */
+function loadLocalLB(){
+  try { return JSON.parse(localStorage.getItem(LB_KEY)) || []; }
+  catch { return []; }
+}
+function saveLocalScore(name, seconds, grid){
+  name = (name || "PLAYER").trim() || "PLAYER";
+  const time = Math.round(seconds*10)/10;
+  const board = loadLocalLB();
+  const existing = board.find(e => e.name.trim().toLowerCase() === name.toLowerCase());
+  if (existing){
+    if (time < existing.time){ existing.time = time; existing.grid = `${grid}x${grid}`; }
+  } else {
+    board.push({ name, time, grid: `${grid}x${grid}` });
+  }
+  board.sort((a,b)=>a.time-b.time);
+  const trimmed = board.slice(0, LB_MAX);
+  localStorage.setItem(LB_KEY, JSON.stringify(trimmed));
+  return trimmed;
+}
+
+/* Global (shared) storage via the Firestore REST API -- no SDK needed, just
+   fetch(). Uses the (lowercased, trimmed) player name as the document ID so
+   a matching name updates in place instead of creating a duplicate row. */
+function slugifyName(name){
+  const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  return encodeURIComponent(slug).slice(0, 60) || "player";
+}
+function entryToFirestoreFields(name, time, grid){
+  return {
+    name: { stringValue: name },
+    time: { doubleValue: time },
+    grid: { stringValue: grid },
+  };
+}
+function firestoreDocToEntry(doc){
+  const f = doc.fields || {};
+  return {
+    name: f.name?.stringValue ?? "PLAYER",
+    time: parseFloat(f.time?.doubleValue ?? f.time?.integerValue ?? 0),
+    grid: f.grid?.stringValue ?? "",
+  };
+}
+
+async function fetchGlobalLB(){
+  if (!LB_GLOBAL_ENABLED) return null;
+  try {
+    const res = await fetch(`${LB_COLLECTION_URL}?pageSize=100`);
+    if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
+    const data = await res.json();
+    const entries = (data.documents || []).map(firestoreDocToEntry);
+    entries.sort((a,b)=>a.time-b.time);
+    return entries.slice(0, LB_MAX);
+  } catch (err) {
+    console.warn("Global leaderboard unavailable, falling back to local scores:", err);
+    return null;
+  }
+}
+
+/* Save a score: writes locally always (so the player has an offline copy /
+   fallback), and to the global board too if configured. Only overwrites a
+   name's existing entry when the new time is faster. */
+async function saveScore(name, seconds, grid){
+  name = (name || "PLAYER").trim() || "PLAYER";
+  const time = Math.round(seconds*10)/10;
+  const gridLabel = `${grid}x${grid}`;
+  saveLocalScore(name, seconds, grid);
+
+  if (!LB_GLOBAL_ENABLED) return;
+
+  const docId = slugifyName(name);
+  const docUrl = `${LB_COLLECTION_URL}/${docId}`;
+  try {
+    const getRes = await fetch(docUrl);
+    if (getRes.ok){
+      const doc = await getRes.json();
+      const existing = firestoreDocToEntry(doc);
+      if (time < existing.time){
+        await fetch(`${docUrl}?updateMask.fieldPaths=name&updateMask.fieldPaths=time&updateMask.fieldPaths=grid`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fields: entryToFirestoreFields(name, time, gridLabel) }),
+        });
+      }
+    } else {
+      await fetch(`${LB_COLLECTION_URL}?documentId=${docId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fields: entryToFirestoreFields(name, time, gridLabel) }),
+      });
+    }
+  } catch (err) {
+    console.warn("Could not save to global leaderboard, score kept locally only:", err);
+  }
+}
+
+function formatTime(sec){
+  sec = Math.max(0, Math.floor(sec));
+  const m = Math.floor(sec/60), s = sec%60;
+  return `${m}:${String(s).padStart(2,"0")}`;
+}
+
+/* ============================== CAMERA + MODEL ============================== */
+let handLandmarker = null;
+
+async function initHandLandmarker(){
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+  );
+  handLandmarker = await HandLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+      delegate: "GPU"
+    },
+    runningMode: "VIDEO",
+    numHands: 2
+  });
+}
+
+async function startCamera(){
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width:1280, height:960 }, audio:false });
+    video.srcObject = stream;
+    await video.play();
+    await initHandLandmarker();
+    permOverlay.classList.add("hidden");
+    setMode("LIVE");
+    requestAnimationFrame(loop);
+  }catch(err){
+    permError.textContent = "Camera/model failed to start: " + err.message;
+  }
+}
+startBtn.addEventListener("click", startCamera);
+
+/* ============================== MODE SWITCHING ============================== */
+function setMode(mode){
+  S.mode = mode;
+  panelLive.classList.toggle("hidden", mode!=="LIVE");
+  panelPuzzle.classList.toggle("hidden", mode!=="PUZZLE");
+  panelSolved.classList.toggle("hidden", mode!=="SOLVED");
+  panelLeaderboard.classList.toggle("hidden", mode!=="LEADERBOARD");
+  scanline.style.display = (mode==="LIVE") ? "block" : "none";
+  hudState.textContent = mode;
+  if (mode === "LEADERBOARD") renderLeaderboard();
+}
+
+/* ============================== MAIN LOOP ============================== */
+let lastT = performance.now();
+let fpsSmooth = 0;
+
+function loop(now){
+  requestAnimationFrame(loop);
+  const dt = now - lastT; lastT = now;
+  fpsSmooth = fpsSmooth ? fpsSmooth*0.9 + (1000/dt)*0.1 : 1000/dt;
+  hudFps.textContent = fpsSmooth.toFixed(0);
+
+  if (video.readyState < 2) return;
+
+  const result = handLandmarker ? handLandmarker.detectForVideo(video, now) : { landmarks: [] };
+  const hands = (result.landmarks || []).map(lm => lm.map(p => ({ x: 1 - p.x, y: p.y }))); // mirror x for selfie view
+
+  // draw base frame (mirrored video) to canvas
+  canvas.width = video.videoWidth || 1280;
+  canvas.height = video.videoHeight || 960;
+  ctx.save();
+  ctx.scale(-1,1);
+  ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+  ctx.restore();
+
+  hudHands.textContent = hands.length;
+
+  if (S.mode === "LIVE") stepLive(hands);
+  else if (S.mode === "PUZZLE") stepPuzzle(hands);
+  else drawHandSkeletons(hands); // SOLVED/NAME/LEADERBOARD still show camera behind panel
+}
+
+function drawHandSkeletons(hands, cursorColor){
+  const CONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],
+                [9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+  ctx.lineWidth = 2;
+  for (const lm of hands){
+    ctx.strokeStyle = "rgba(94,234,212,.55)";
+    ctx.beginPath();
+    for (const [a,b] of CONN){
+      ctx.moveTo(lm[a].x*canvas.width, lm[a].y*canvas.height);
+      ctx.lineTo(lm[b].x*canvas.width, lm[b].y*canvas.height);
+    }
+    ctx.stroke();
+    ctx.fillStyle = "#5eead4";
+    for (const p of lm){
+      ctx.beginPath();
+      ctx.arc(p.x*canvas.width, p.y*canvas.height, 2.2, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+}
+
+/* ---------------- LIVE / capture ---------------- */
+function stepLive(hands){
+  drawHandSkeletons(hands);
+  let pinchedCount = 0, lastRatio = 0;
+  for (const lm of hands){
+    const ratio = pinchRatio(lm);
+    lastRatio = ratio;
+    const pt = pinchPointNorm(lm);
+    const isPinch = ratio < S.pinchThreshold;
+    if (isPinch) pinchedCount++;
+    ctx.beginPath();
+    ctx.arc(pt.x*canvas.width, pt.y*canvas.height, 16, 0, Math.PI*2);
+    ctx.strokeStyle = isPinch ? "#5eead4" : "#f5b95a";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+  hudPinch.textContent = lastRatio.toFixed(2);
+
+  // header caption
+  drawCaption("PHASE 1 · FRAME WITH TWO HANDS, PINCH BOTH TO SNAP");
+
+  const now = performance.now()/1000;
+  const bothPinching = pinchedCount >= 2 && hands.length >= 2;
+  if (now - S.lastCaptureTime < CAPTURE_COOLDOWN){
+    S.twoHandPinchStart = null;
+  } else if (bothPinching){
+    if (S.twoHandPinchStart == null) S.twoHandPinchStart = now;
+    const elapsed = now - S.twoHandPinchStart;
+    const frac = Math.min(elapsed/PINCH_HOLD_SECONDS, 1);
+    drawProgressRing(frac);
+    if (elapsed >= PINCH_HOLD_SECONDS){
+      S.twoHandPinchStart = null;
+      S.lastCaptureTime = now;
+      doCapture();
+    }
+  } else {
+    S.twoHandPinchStart = null;
+  }
+}
+
+function drawProgressRing(frac){
+  const cx = canvas.width/2, cy = canvas.height/2, r = 70;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, -Math.PI/2, -Math.PI/2 + frac*Math.PI*2);
+  ctx.strokeStyle = "#5eead4";
+  ctx.lineWidth = 6;
+  ctx.stroke();
+}
+function drawCaption(text){
+  ctx.font = "600 15px 'IBM Plex Mono', monospace";
+  const pad = 10;
+  const w = ctx.measureText(text).width + pad*2;
+  ctx.fillStyle = "rgba(10,13,15,.72)";
+  ctx.fillRect(canvas.width/2 - w/2, 14, w, 30);
+  ctx.fillStyle = "#5eead4";
+  ctx.textAlign = "center";
+  ctx.fillText(text, canvas.width/2, 34);
+  ctx.textAlign = "left";
+}
+
+function doCapture(){
+  const side = Math.min(video.videoWidth, video.videoHeight);
+  const sx = (video.videoWidth - side)/2, sy = (video.videoHeight - side)/2;
+  const src = document.createElement("canvas");
+  src.width = 600; src.height = 600;
+  const sctx = src.getContext("2d");
+  // draw mirrored crop so puzzle tiles match what's shown on screen
+  sctx.save();
+  sctx.scale(-1,1);
+  sctx.drawImage(video, sx, sy, side, side, -600, 0, 600, 600);
+  sctx.restore();
+
+  S.puzzle = makePuzzle(src, S.grid);
+  S.heldPos = null; S.mouseHeld = null;
+  S.wasPinching = false; S.pinchStartTime = null; S.lastHandSeenTime = null; S.fistStartTime = null;
+  S.solveStart = null; S.solveEnd = null;
+  S.feedback = "";
+  setMode("PUZZLE");
+}
+
+/* ---------------- PUZZLE / solve ---------------- */
+function pixelToPos(px, py){
+  const grid = S.puzzle.grid;
+  const boardPx = S.tilePx * grid;
+  const x = px - S.offset.x, y = py - S.offset.y;
+  if (x<0||y<0||x>=boardPx||y>=boardPx) return null;
+  const c = Math.floor(x/S.tilePx), r = Math.floor(y/S.tilePx);
+  return r*grid + c;
+}
+
+function attemptSwap(fromPos, toPos){
+  if (S.solveStart == null) S.solveStart = performance.now()/1000;
+  const moved = swapTiles(S.puzzle, fromPos, toPos);
+  if (moved){
+    setFeedback("Swapped!", "#5eead4", 0.6);
+    if (isSolved(S.puzzle)){
+      S.solveEnd = performance.now()/1000;
+      solvedTime.textContent = formatTime(S.solveEnd - S.solveStart);
+      setMode("SOLVED");
+    }
+  } else {
+    setFeedback("Drop missed the grid", "#fb7185", 1.0);
+  }
+  return moved;
+}
+function setFeedback(text, color, secs){
+  S.feedback = text; S.feedbackColor = color;
+  S.feedbackUntil = performance.now()/1000 + secs;
+}
+
+function stepPuzzle(hands){
+  const grid = S.puzzle.grid;
+  const box = Math.min(canvas.width, canvas.height) - 160;
+  const ox = (canvas.width-box)/2, oy = (canvas.height-box)/2 + 20;
+  S.offset = {x:ox, y:oy};
+  const ts = box/grid;
+  S.tilePx = ts;
+
+  // draw tiles
+  for (let pos=0; pos<grid*grid; pos++){
+    const tileId = S.puzzle.board[pos];
+    const r = Math.floor(pos/grid), c = pos%grid;
+    const dx = ox + c*ts, dy = oy + r*ts;
+    if (pos === S.heldPos){
+      ctx.fillStyle = "#1b2225";
+      ctx.fillRect(dx,dy,ts,ts);
+      ctx.strokeStyle = "#5eead4"; ctx.lineWidth = 2;
+      ctx.strokeRect(dx+1,dy+1,ts-2,ts-2);
+      continue;
+    }
+    const home = tileHomeRect(S.puzzle, tileId);
+    ctx.drawImage(S.puzzle.src, home.sx, home.sy, home.sw, home.sh, dx, dy, ts, ts);
+    ctx.strokeStyle = "rgba(20,20,20,.9)"; ctx.lineWidth = 2;
+    ctx.strokeRect(dx+1,dy+1,ts-2,ts-2);
+  }
+  ctx.strokeStyle = "#5eead4"; ctx.lineWidth = 2;
+  ctx.strokeRect(ox,oy,box,box);
+
+  if (S.mouseHeld != null){
+    const r = Math.floor(S.mouseHeld/grid), c = S.mouseHeld%grid;
+    ctx.strokeStyle = "#fb7185"; ctx.lineWidth = 3;
+    ctx.strokeRect(ox+c*ts+2, oy+r*ts+2, ts-4, ts-4);
+  }
+
+  drawHandSkeletons(hands);
+
+  // primary hand = first detected
+  let pinching=false, fisting=false, cursorNorm=null, ratio=0, curlCount=0;
+  if (hands.length){
+    const lm = hands[0];
+    ratio = pinchRatio(lm);
+    const fc = isFist(lm);
+    curlCount = fc.curled;
+    // A full fist ALWAYS wins over pinch: a closed fist naturally brings the
+    // thumb close to the curled fingers too, which can trip the pinch-ratio
+    // check. If pinch won, a genuine fist could silently fail to register.
+    if (fc.isFist){
+      fisting = true;
+      pinching = false;
+    } else {
+      fisting = false;
+      pinching = ratio < S.pinchThreshold;
+    }
+    if (!fisting) cursorNorm = pinchPointNorm(lm);
+  }
+  hudPinch.textContent = ratio.toFixed(2);
+
+  let cursorPx = null;
+  if (cursorNorm){
+    cursorPx = { x: cursorNorm.x*canvas.width, y: cursorNorm.y*canvas.height };
+    S.lastCursor = cursorPx;
+    ctx.beginPath();
+    ctx.arc(cursorPx.x, cursorPx.y, 15, 0, Math.PI*2);
+    ctx.strokeStyle = pinching ? "#5eead4" : "#f5b95a";
+    ctx.lineWidth = 3; ctx.stroke();
+  }
+
+  const hitPoint = cursorPx || S.lastCursor;
+  const posUnderCursor = hitPoint ? pixelToPos(hitPoint.x, hitPoint.y) : null;
+
+  // floating dragged tile follows fingertip every frame
+  if (S.heldPos != null && hitPoint){
+    const tileId = S.puzzle.board[S.heldPos];
+    const home = tileHomeRect(S.puzzle, tileId);
+    const scale = 1.12, dsz = ts*scale;
+    const dx = hitPoint.x - dsz/2, dy = hitPoint.y - dsz/2;
+    ctx.drawImage(S.puzzle.src, home.sx, home.sy, home.sw, home.sh, dx, dy, dsz, dsz);
+    ctx.strokeStyle = posUnderCursor != null ? "#5eead4" : "#fb7185";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(dx,dy,dsz,dsz);
+    if (posUnderCursor != null){
+      const r = Math.floor(posUnderCursor/grid), c = posUnderCursor%grid;
+      ctx.strokeStyle = "#5eead4"; ctx.lineWidth = 3;
+      ctx.strokeRect(ox+c*ts+2, oy+r*ts+2, ts-4, ts-4);
+    }
+  }
+
+  // fist -> reshuffle
+  const now = performance.now()/1000;
+  if (fisting){
+    if (S.fistStartTime == null) S.fistStartTime = now;
+    const elapsed = now - S.fistStartTime;
+    const frac = Math.min(elapsed/FIST_HOLD_SECONDS, 1);
+    const wrist = hands[0][0];
+    const fx = wrist.x*canvas.width, fy = wrist.y*canvas.height;
+    ctx.beginPath();
+    ctx.arc(fx, fy, 34, -Math.PI/2, -Math.PI/2 + frac*Math.PI*2);
+    ctx.strokeStyle = "#fb7185"; ctx.lineWidth = 5; ctx.stroke();
+    if (elapsed >= FIST_HOLD_SECONDS){
+      S.fistStartTime = null; S.heldPos = null; S.pinchStartTime = null;
+      reshufflePuzzle(S.puzzle);
+      S.solveStart = null; S.solveEnd = null;
+      setFeedback("Reshuffled", "#f5b95a", 1.0);
+    }
+  } else {
+    S.fistStartTime = null;
+  }
+
+  // pick up / drop -- only trust transitions on frames a hand was detected
+  if (hands.length){
+    S.lastHandSeenTime = now;
+    if (pinching && !S.wasPinching){
+      if (posUnderCursor != null){ S.heldPos = posUnderCursor; S.pinchStartTime = now; }
+    } else if (!pinching && S.wasPinching){
+      if (S.heldPos != null){
+        if (posUnderCursor != null) attemptSwap(S.heldPos, posUnderCursor);
+        else setFeedback("Dropped outside grid — cancelled", "#fb7185", 1.2);
+        S.heldPos = null; S.pinchStartTime = null;
+      }
+    }
+    S.wasPinching = pinching;
+  }
+
+  // safety net: force-drop ONLY if the hand has genuinely vanished from
+  // tracking for a while mid-drag. A real pinch you're still holding --
+  // however long -- must never be auto-dropped; it only drops on release.
+  if (S.heldPos != null && S.lastHandSeenTime != null && now - S.lastHandSeenTime > MAX_HAND_LOST_SECONDS){
+    if (posUnderCursor != null) attemptSwap(S.heldPos, posUnderCursor);
+    else setFeedback("Hand lost — drag cancelled", "#fb7185", 1.2);
+    S.heldPos = null; S.pinchStartTime = null; S.wasPinching = false;
+  }
+
+  // timer
+  const elapsedT = S.solveStart != null ? (S.solveEnd || now) - S.solveStart : 0;
+  timerText.textContent = formatTime(elapsedT);
+
+  drawCaption("PHASE 2 · PINCH + DRAG A TILE ONTO ANY OTHER TILE");
+
+  if (S.debug){
+    ctx.font = "500 12px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "#5eead4";
+    ctx.fillText(`hand:${hands.length>0} pinch:${pinching} ratio:${ratio.toFixed(2)} held:${S.heldPos} target:${posUnderCursor} fist_curl:${curlCount}/4`, 12, canvas.height-14);
+  }
+
+  if (S.feedback && now < S.feedbackUntil){
+    ctx.font = "600 16px 'IBM Plex Mono', monospace";
+    const w = ctx.measureText(S.feedback).width + 24;
+    ctx.fillStyle = "rgba(10,13,15,.8)";
+    ctx.fillRect(canvas.width/2-w/2, 54, w, 32);
+    ctx.fillStyle = S.feedbackColor;
+    ctx.textAlign = "center";
+    ctx.fillText(S.feedback, canvas.width/2, 76);
+    ctx.textAlign = "left";
+  }
+}
+
+/* ============================== INPUT: MOUSE / TOUCH (click-click swap) ============================== */
+function canvasPointFromEvent(e){
+  const rect = canvas.getBoundingClientRect();
+  const cx = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+  const cy = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+  return { x: cx * (canvas.width/rect.width), y: cy * (canvas.height/rect.height) };
+}
+function handlePointerDown(e){
+  if (S.mode !== "PUZZLE" || !S.puzzle) return;
+  const pt = canvasPointFromEvent(e);
+  const pos = pixelToPos(pt.x, pt.y);
+  if (pos == null) return;
+  if (S.mouseHeld == null){ S.mouseHeld = pos; setFeedback("Picked up — tap destination", "#f5b95a", 2.0); }
+  else { attemptSwap(S.mouseHeld, pos); S.mouseHeld = null; }
+}
+canvas.addEventListener("mousedown", handlePointerDown);
+canvas.addEventListener("touchstart", (e)=>{ handlePointerDown(e); }, {passive:true});
+
+/* ============================== PANEL WIRING ============================== */
+document.querySelectorAll(".grid-btn").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    S.grid = parseInt(btn.dataset.grid, 10);
+    document.querySelectorAll(".grid-btn").forEach(b=>b.classList.toggle("active", b===btn));
+  });
+});
+document.querySelector(`.grid-btn[data-grid="${DEFAULT_GRID}"]`).classList.add("active");
+
+sensSlider.addEventListener("input", ()=>{
+  S.pinchThreshold = parseFloat(sensSlider.value);
+  sensVal.textContent = S.pinchThreshold.toFixed(2);
+});
+
+document.getElementById("manualCaptureBtn").addEventListener("click", doCapture);
+document.getElementById("reshuffleBtn").addEventListener("click", ()=>{
+  reshufflePuzzle(S.puzzle); S.solveStart=null; S.solveEnd=null; S.heldPos=null; S.mouseHeld=null;
+});
+document.getElementById("backToCameraBtn").addEventListener("click", ()=> setMode("LIVE"));
+document.getElementById("debugToggleBtn").addEventListener("click", ()=> S.debug = !S.debug);
+
+document.getElementById("saveScoreBtn").addEventListener("click", async ()=>{
+  const btn = document.getElementById("saveScoreBtn");
+  btn.disabled = true; btn.textContent = "Saving…";
+  await saveScore(nameInput.value.trim(), (S.solveEnd - S.solveStart), S.puzzle.grid);
+  nameInput.value = "";
+  btn.disabled = false; btn.textContent = "Save Score";
+  setMode("LEADERBOARD");
+});
+document.getElementById("solvedReshuffleBtn").addEventListener("click", ()=>{
+  reshufflePuzzle(S.puzzle); S.solveStart=null; S.solveEnd=null; setMode("PUZZLE");
+});
+document.getElementById("solvedBackBtn").addEventListener("click", ()=> setMode("LIVE"));
+document.getElementById("lbBackBtn").addEventListener("click", ()=> setMode("LIVE"));
+
+const lbScopeLabel = document.getElementById("lbScopeLabel");
+
+async function renderLeaderboard(){
+  leaderboardBody.innerHTML = `<tr><td colspan="4" style="color:var(--text-dim);">Loading…</td></tr>`;
+  if (lbScopeLabel) lbScopeLabel.textContent = LB_GLOBAL_ENABLED ? "shared — everyone's scores" : "stored in this browser only";
+
+  let board = null;
+  let usedGlobal = false;
+  if (LB_GLOBAL_ENABLED){
+    board = await fetchGlobalLB();
+    usedGlobal = board !== null;
+  }
+  if (board === null){
+    board = loadLocalLB();
+    if (LB_GLOBAL_ENABLED && lbScopeLabel){
+      lbScopeLabel.textContent = "shared board unreachable — showing local scores only";
+    }
+  }
+
+  leaderboardBody.innerHTML = "";
+  if (!board.length){
+    leaderboardBody.innerHTML = `<tr><td colspan="4" style="color:var(--text-dim);">No scores yet.</td></tr>`;
+    return;
+  }
+  board.forEach((e,i)=>{
+    const tr = document.createElement("tr");
+    if (i===0) tr.className = "top";
+    tr.innerHTML = `<td>${i+1}</td><td>${e.name}</td><td>${formatTime(e.time)}</td><td>${e.grid}</td>`;
+    leaderboardBody.appendChild(tr);
+  });
+}
+
+/* ============================== KEYBOARD FALLBACK ============================== */
+window.addEventListener("keydown", (e)=>{
+  if (S.mode === "NAME_ENTRY") return; // handled by input field natively
+  if (["1","2","3"].includes(e.key)){
+    S.grid = parseInt(e.key,10) + 2;
+    document.querySelectorAll(".grid-btn").forEach(b=>b.classList.toggle("active", parseInt(b.dataset.grid,10)===S.grid));
+  } else if (e.key === " " && S.mode==="LIVE"){ e.preventDefault(); doCapture(); }
+  else if (e.key.toLowerCase() === "r" && S.puzzle){ reshufflePuzzle(S.puzzle); S.solveStart=null; S.solveEnd=null; }
+  else if (e.key.toLowerCase() === "c"){ setMode("LIVE"); }
+  else if (e.key.toLowerCase() === "d"){ S.debug = !S.debug; }
+  else if (e.key === "+" || e.key === "="){ S.pinchThreshold = Math.min(1.5, S.pinchThreshold+0.05); sensSlider.value = S.pinchThreshold; sensVal.textContent = S.pinchThreshold.toFixed(2); }
+  else if (e.key === "-"){ S.pinchThreshold = Math.max(0.05, S.pinchThreshold-0.05); sensSlider.value = S.pinchThreshold; sensVal.textContent = S.pinchThreshold.toFixed(2); }
+});
+</script>
+</body>
+</html>
