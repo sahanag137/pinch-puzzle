@@ -170,7 +170,7 @@ A window will open showing your webcam feed with the game overlaid.
 ---
 
 ## 🌐 Live Demo
-
+pinch-puzzle-teal.vercel.app
 
 ## 🌍 Shared Leaderboard Setup (optional)
 
