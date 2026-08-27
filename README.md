@@ -173,19 +173,18 @@ A window will open showing your webcam feed with the game overlaid.
 
 Coming soon.
 
----
-
 ## 🖼️ Screenshots / Demo
 
-**Demo video** — two-hand pinch capture, drag-swapping tiles, solved screen, and the leaderboard:
+### 🎥 Gameplay Demo
 
-<video src="C:\Users\admin\Downloads\pinch-puzzle\assets\20260823-0916-52.6606602.mp4" controls width="600">
-  Your browser doesn't support embedded video —
-  <a href="C:\Users\admin\Downloads\pinch-puzzle\assets\20260823-0916-52.6606602.mp4">watch/download it directly</a>.
-</video>
+[▶️ Watch the Pinch Puzzle Demo](./assets/demo.mp4)
 
-
----
+The demo shows:
+- Two-hand pinch photo capture
+- Pinch-and-drag tile swapping
+- Puzzle solving
+- Solved screen
+- Leaderboard
 
 ## 🌍 Shared Leaderboard Setup (optional)
 
