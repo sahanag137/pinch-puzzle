@@ -171,18 +171,6 @@ A window will open showing your webcam feed with the game overlaid.
 
 ## 🌐 Live Demo
 
-Coming soon.
-
-## 🖼️ Screenshots / Demo
-
-<h2>🖼️ Screenshots / Demo</h2>
-
-<h3>🎥 Gameplay Demo</h3>
-
-<video controls width="700">
-  <source src="https://raw.githubusercontent.com/sahanag137/pinch-puzzle/main/assets/demo.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
 
 ## 🌍 Shared Leaderboard Setup (optional)
 
