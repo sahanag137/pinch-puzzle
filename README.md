@@ -175,16 +175,14 @@ Coming soon.
 
 ## 🖼️ Screenshots / Demo
 
-### 🎥 Gameplay Demo
+<h2>🖼️ Screenshots / Demo</h2>
 
-[▶️ Watch the Pinch Puzzle Demo](./assets/demo.mp4)
+<h3>🎥 Gameplay Demo</h3>
 
-The demo shows:
-- Two-hand pinch photo capture
-- Pinch-and-drag tile swapping
-- Puzzle solving
-- Solved screen
-- Leaderboard
+<video controls width="700">
+  <source src="https://raw.githubusercontent.com/sahanag137/pinch-puzzle/main/assets/demo.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
 
 ## 🌍 Shared Leaderboard Setup (optional)
 
