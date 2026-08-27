@@ -179,9 +179,9 @@ Coming soon.
 
 **Demo video** — two-hand pinch capture, drag-swapping tiles, solved screen, and the leaderboard:
 
-<video src="assets/20260823-0916-52.6606602.mp4" controls width="600">
+<video src="C:\Users\admin\Downloads\pinch-puzzle\assets\20260823-0916-52.6606602.mp4" controls width="600">
   Your browser doesn't support embedded video —
-  <a href="assets/20260823-0916-52.6606602.mp4">watch/download it directly</a>.
+  <a href="C:\Users\admin\Downloads\pinch-puzzle\assets\20260823-0916-52.6606602.mp4">watch/download it directly</a>.
 </video>
 
 
